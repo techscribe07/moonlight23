@@ -314,22 +314,9 @@ function handleMessages(request, sender, sendResponse) {
       });
     }
     
-    // Create a list of highlights that haven't been extracted yet 
-    // by checking if they have the 'extracted' property
-    const newHighlights = customHighlights.filter(highlight => !highlight.extracted);
-    
-    // Mark all highlights as extracted
-    customHighlights = customHighlights.map(highlight => {
-      return { ...highlight, extracted: true };
-    });
-    
-    // Update the highlights in the DOM to reflect they've been extracted
-    document.querySelectorAll('.highlight-extractor-highlight').forEach(el => {
-      el.dataset.extracted = 'true';
-    });
-    
-    // Only return the new highlights
-    sendResponse({ highlights: newHighlights });
+    // Send all highlights, not just new ones
+    // The duplicate checking will happen in the popup.js
+    sendResponse({ highlights: customHighlights });
     return true;
   }
   

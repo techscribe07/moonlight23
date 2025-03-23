@@ -104,10 +104,10 @@ function saveHighlightsToStorage(highlights) {
       const settings = settingsResult.settings || {};
       
       // We'll only process highlights that don't already exist in flashcards
+      // Check only by text content for simplicity and consistency
       const newHighlights = highlights.filter(highlight => {
         return !flashcards.some(card => 
-          card.originalText === highlight.text && 
-          card.url === (highlight.url || '')
+          card.originalText === highlight.text
         );
       });
       
@@ -186,10 +186,9 @@ function addFlashcardFromHighlight(highlight) {
   chrome.storage.local.get(['flashcards'], function(result) {
     let flashcards = result.flashcards || [];
     
-    // Check for duplicates before adding
+    // Check for duplicates before adding - only check text content
     const isDuplicate = flashcards.some(card => 
-      card.originalText === highlight.text && 
-      card.url === highlight.url
+      card.originalText === highlight.text
     );
     
     if (isDuplicate) {
@@ -251,8 +250,7 @@ function processHighlightsToFlashcards(highlights, settings) {
     highlights.forEach(highlight => {
       // Check for duplicates
       const isDuplicate = existingFlashcards.some(card => 
-        card.originalText === highlight.text && 
-        card.url === (highlight.url || '')
+        card.originalText === highlight.text
       );
       
       if (isDuplicate) {

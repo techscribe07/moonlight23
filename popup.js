@@ -214,6 +214,11 @@ function saveHighlights(highlights) {
         return;
       }
       
+      // Skip if the highlight text is empty
+      if (!highlight.text || highlight.text.trim() === '') {
+        return;
+      }
+      
       // Generate title based on first few words or context
       const autoTitle = document.getElementById('auto-title').checked;
       const asQuestion = document.getElementById('auto-question').checked;
@@ -235,10 +240,13 @@ function saveHighlights(highlights) {
       // Use highlight source if available, otherwise use the source input field
       const source = highlight.source || sourceValue;
       
-      // Check for duplicates before adding
+      // Use a more flexible approach for duplicate detection
+      const highlightUrl = highlight.url || window.location.href;
+      
+      // Less strict duplicate detection - just check if the text matches 
+      // (don't check URL to avoid issues with URL encoding/formatting)
       const isDuplicate = flashcards.some(card => 
-        card.originalText === highlight.text && 
-        card.url === (highlight.url || window.location.href)
+        card.originalText === highlight.text
       );
       
       if (isDuplicate) {
@@ -253,7 +261,7 @@ function saveHighlights(highlights) {
         originalText: highlight.text,
         context: highlight.context || '',
         color: highlight.color,
-        url: highlight.url || window.location.href,
+        url: highlightUrl,
         pageTitle: highlight.title || document.title,
         timestamp: new Date().toISOString(),
         source: source
@@ -264,22 +272,27 @@ function saveHighlights(highlights) {
       newFlashcards.push(newFlashcard);
     });
     
-    // Save to storage
-    chrome.storage.local.set({ flashcards: flashcards }, function() {
-      console.log('Flashcards saved:', newFlashcards.length, 'new cards');
-      
-      // Update the display
-      loadFlashcards();
-      
-      // Update extraction status to show count of new flashcards
-      if (newFlashcards.length > 0) {
+    // Only save if we have any new flashcards
+    if (newFlashcards.length > 0) {
+      // Save to storage
+      chrome.storage.local.set({ flashcards: flashcards }, function() {
+        console.log('Flashcards saved:', newFlashcards.length, 'new cards');
+        
+        // Update the display
+        loadFlashcards();
+        
+        // Update extraction status
         document.getElementById('extraction-status').textContent = 
           `Extracted ${newFlashcards.length} new highlight(s)!`;
-      } else {
-        document.getElementById('extraction-status').textContent = 
-          'No new highlights found.';
-      }
-    });
+      });
+    } else {
+      // Update the display anyway in case we have highlights but they're all duplicates
+      loadFlashcards();
+      
+      // Update status to indicate no new highlights
+      document.getElementById('extraction-status').textContent = 
+        'No new highlights found. Existing highlights may already be saved.';
+    }
   });
 }
 
