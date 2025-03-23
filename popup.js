@@ -550,6 +550,13 @@ function loadSettings() {
       pdfCheckbox.checked = settings.improvePdf !== false; // Default to true
     }
     
+    // Set persistent highlights
+    const persistentHighlights = document.getElementById('persistent-highlights');
+    if (persistentHighlights) {
+      // Default to true
+      persistentHighlights.checked = settings.persistentHighlights !== false;
+    }
+    
     // Apply dark mode if needed
     if (settings.darkMode) {
       document.body.classList.add('dark-theme');
@@ -562,6 +569,7 @@ function saveSettings() {
   const colorPicker = document.getElementById('highlight-color');
   const formatSelect = document.getElementById('export-format');
   const pdfCheckbox = document.getElementById('improve-pdf');
+  const persistentHighlights = document.getElementById('persistent-highlights');
   
   chrome.storage.sync.get(['settings'], function(result) {
     // Get existing settings or create new object
@@ -578,6 +586,20 @@ function saveSettings() {
     
     if (pdfCheckbox) {
       settings.improvePdf = pdfCheckbox.checked;
+    }
+    
+    if (persistentHighlights) {
+      settings.persistentHighlights = persistentHighlights.checked;
+      
+      // Send message to active tab about the persistent highlights setting
+      chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(tabs[0].id, {
+            action: "updatePersistentHighlights",
+            persistent: persistentHighlights.checked
+          });
+        }
+      });
     }
     
     // Save dark mode state
