@@ -52,6 +52,11 @@ document.addEventListener('DOMContentLoaded', function() {
     clearHighlights();
   });
   
+  // View Notes button
+  document.getElementById('viewNotesBtn').addEventListener('click', function() {
+    openNotesPage();
+  });
+  
   // Check if we're in a PDF on popup open
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
     const isPdf = tabs[0].url.toLowerCase().includes('.pdf');
@@ -59,6 +64,15 @@ document.addEventListener('DOMContentLoaded', function() {
       // For PDFs, show a special notice
       const statusElement = document.getElementById('extraction-status');
       statusElement.innerHTML = '<strong>PDF Detected:</strong> Select text and click Highlight!';
+      
+      // Check if enhanced PDF support is enabled
+      chrome.storage.sync.get(['settings'], function(result) {
+        const settings = result.settings || {};
+        if (settings.improvePdf) {
+          // Inject PDF enhancement script
+          enhancePdfSupport(tabs[0].id);
+        }
+      });
     }
   });
   
@@ -83,16 +97,21 @@ function addHighlight() {
       const settings = result.settings || {};
       const highlightColor = settings.highlightColor || '#ffeb3b'; // Default yellow
       
+      // Get source info if available
+      const sourceInput = document.getElementById('source-input');
+      const source = sourceInput ? sourceInput.value.trim() : '';
+      
       chrome.scripting.executeScript({
         target: {tabId: tabs[0].id},
-        function: (color) => {
+        function: (color, source) => {
           // Send a message to the content script to highlight the selection
           chrome.runtime.sendMessage({
             action: "highlightSelection",
-            color: color
+            color: color,
+            source: source
           });
         },
-        args: [highlightColor]
+        args: [highlightColor, source]
       });
     });
   });
@@ -104,12 +123,20 @@ function extractHighlights() {
   document.getElementById('extraction-status').textContent = "Extracting highlights...";
   
   chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
+    // Get source info if available
+    const sourceInput = document.getElementById('source-input');
+    const source = sourceInput ? sourceInput.value.trim() : '';
+    
     chrome.scripting.executeScript({
       target: {tabId: tabs[0].id},
-      function: () => {
+      function: (source) => {
         // This function runs in the context of the web page
-        return chrome.runtime.sendMessage({action: "extractHighlights"});
-      }
+        return chrome.runtime.sendMessage({
+          action: "extractHighlights",
+          source: source
+        });
+      },
+      args: [source]
     }, (results) => {
       if (chrome.runtime.lastError) {
         document.getElementById('extraction-status').textContent = 
@@ -125,7 +152,10 @@ function extractHighlights() {
       }
       
       // Process extracted highlights
-      chrome.tabs.sendMessage(tabs[0].id, {action: "extractHighlights"}, function(response) {
+      chrome.tabs.sendMessage(tabs[0].id, {
+        action: "extractHighlights",
+        source: source
+      }, function(response) {
         if (chrome.runtime.lastError) {
           document.getElementById('extraction-status').textContent = 
             "Error communicating with page. Please try again.";
@@ -170,6 +200,10 @@ function saveHighlights(highlights) {
   chrome.storage.local.get(['flashcards'], function(result) {
     let flashcards = result.flashcards || [];
     
+    // Get source info if available
+    const sourceInput = document.getElementById('source-input');
+    const sourceValue = sourceInput ? sourceInput.value.trim() : '';
+    
     // Process new highlights
     highlights.forEach(highlight => {
       // Skip system messages
@@ -195,21 +229,28 @@ function saveHighlights(highlights) {
         content = `What does this mean: "${highlight.text}"?`;
       }
       
+      // Use highlight source if available, otherwise use the source input field
+      const source = highlight.source || sourceValue;
+      
       flashcards.push({
         title: title,
         content: content,
         originalText: highlight.text,
-        context: highlight.context,
-        timestamp: highlight.timestamp,
+        context: highlight.context || '',
         color: highlight.color,
-        source: highlight.url || window.location.href
+        url: highlight.url || window.location.href,
+        pageTitle: highlight.title || document.title,
+        timestamp: new Date().toISOString(),
+        source: source
       });
     });
     
-    // Save updated flashcards
+    // Save to storage
     chrome.storage.local.set({ flashcards: flashcards }, function() {
-      // Update the displayed flashcards
-      displayFlashcards(flashcards);
+      console.log('Flashcards saved:', flashcards.length);
+      
+      // Update the display
+      loadFlashcards();
     });
   });
 }
@@ -224,68 +265,98 @@ function loadFlashcards() {
 
 // Display flashcards in the popup
 function displayFlashcards(flashcards) {
-  const flashcardsContainer = document.getElementById('flashcards-container');
+  const container = document.getElementById('flashcards-container');
   
-  if (!flashcards || flashcards.length === 0) {
-    flashcardsContainer.innerHTML = '<p class="no-flashcards">No flashcards yet. Extract some highlights!</p>';
+  // Clear container
+  container.innerHTML = '';
+  
+  if (flashcards.length === 0) {
+    container.innerHTML = '<p class="no-flashcards">No flashcards found. Start by highlighting text on web pages.</p>';
     return;
   }
   
-  // Clear the container
-  flashcardsContainer.innerHTML = '';
+  // Sort by newest first
+  flashcards.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   
-  // Display flashcards
-  flashcards.forEach((flashcard, index) => {
-    const card = document.createElement('div');
-    card.className = 'flashcard';
-    
-    // Apply color if available
-    if (flashcard.color) {
-      card.style.borderLeft = `4px solid ${flashcard.color}`;
-    }
+  // Show most recent 5 flashcards
+  const recentFlashcards = flashcards.slice(0, 5);
+  
+  // Create flashcard elements
+  recentFlashcards.forEach((card, index) => {
+    const flashcard = document.createElement('div');
+    flashcard.className = 'flashcard';
     
     const title = document.createElement('h3');
     title.className = 'flashcard-title';
-    title.textContent = flashcard.title || `Highlight ${index + 1}`;
+    title.textContent = card.title || 'Untitled Flashcard';
     
     const content = document.createElement('p');
     content.className = 'flashcard-content';
-    content.textContent = flashcard.content;
+    content.textContent = card.content;
+    
+    // Source display
+    if (card.source) {
+      const source = document.createElement('div');
+      source.className = 'flashcard-source';
+      source.textContent = `Source: ${card.source}`;
+      source.style.fontSize = '11px';
+      source.style.fontStyle = 'italic';
+      source.style.marginTop = '5px';
+      source.style.color = '#777';
+      flashcard.appendChild(source);
+    }
     
     const timestamp = document.createElement('div');
     timestamp.className = 'flashcard-timestamp';
-    const date = new Date(flashcard.timestamp);
-    timestamp.textContent = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    
+    // Format the date
+    const date = new Date(card.timestamp);
+    timestamp.textContent = date.toLocaleString();
     
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'delete-flashcard';
     deleteBtn.textContent = '×';
-    deleteBtn.addEventListener('click', () => {
+    deleteBtn.addEventListener('click', function() {
       deleteFlashcard(index);
     });
     
-    card.appendChild(title);
-    card.appendChild(content);
-    card.appendChild(timestamp);
-    card.appendChild(deleteBtn);
+    flashcard.appendChild(title);
+    flashcard.appendChild(content);
+    flashcard.appendChild(timestamp);
+    flashcard.appendChild(deleteBtn);
     
-    flashcardsContainer.appendChild(card);
+    container.appendChild(flashcard);
   });
+  
+  // Add note about more cards if there are more than 5
+  if (flashcards.length > 5) {
+    const moreInfo = document.createElement('p');
+    moreInfo.textContent = `${flashcards.length - 5} more flashcards available. Click "See All Notes" to view all.`;
+    moreInfo.style.textAlign = 'center';
+    moreInfo.style.fontStyle = 'italic';
+    moreInfo.style.fontSize = '12px';
+    moreInfo.style.margin = '15px 0';
+    container.appendChild(moreInfo);
+  }
 }
 
 // Delete a flashcard
 function deleteFlashcard(index) {
   chrome.storage.local.get(['flashcards'], function(result) {
-    let flashcards = result.flashcards || [];
+    const flashcards = result.flashcards || [];
     
-    // Remove the flashcard at the specified index
-    flashcards.splice(index, 1);
-    
-    // Save the updated flashcards
-    chrome.storage.local.set({ flashcards: flashcards }, function() {
-      // Update the display
-      displayFlashcards(flashcards);
-    });
+    if (index >= 0 && index < flashcards.length) {
+      // Remove the flashcard
+      flashcards.splice(index, 1);
+      
+      // Save back to storage
+      chrome.storage.local.set({ flashcards: flashcards }, function() {
+        console.log('Flashcard deleted');
+        
+        // Refresh the display
+        loadFlashcards();
+      });
+    }
   });
 }
 
@@ -295,61 +366,124 @@ function exportFlashcards() {
     const flashcards = result.flashcards || [];
     
     if (flashcards.length === 0) {
-      alert('No flashcards to export!');
+      alert('No flashcards to export');
       return;
     }
     
-    // Format for export
-    const format = document.getElementById('export-format').value;
-    let exportData = '';
-    
-    if (format === 'txt') {
-      // Simple text format
-      flashcards.forEach(card => {
-        exportData += `Question: ${card.title || 'Untitled'}\n`;
-        exportData += `Answer: ${card.content}\n`;
-        exportData += `Context: ${card.context || 'N/A'}\n`;
-        exportData += `Timestamp: ${card.timestamp}\n`;
-        exportData += `\n---\n\n`;
-      });
-    } else if (format === 'json') {
-      // JSON format
-      exportData = JSON.stringify(flashcards, null, 2);
-    } else if (format === 'csv') {
-      // CSV format
-      exportData = 'Title,Content,Context,Timestamp\n';
-      flashcards.forEach(card => {
-        // Escape quotes in CSV fields
-        const title = `"${(card.title || 'Untitled').replace(/"/g, '""')}"`;
-        const content = `"${card.content.replace(/"/g, '""')}"`;
-        const context = `"${(card.context || '').replace(/"/g, '""')}"`;
-        const timestamp = `"${card.timestamp}"`;
-        
-        exportData += `${title},${content},${context},${timestamp}\n`;
-      });
-    }
-    
-    // Create a download link
-    const blob = new Blob([exportData], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    
-    const downloadLink = document.createElement('a');
-    downloadLink.href = url;
-    downloadLink.download = `highlights_export.${format}`;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    // Get export format
+    chrome.storage.sync.get(['settings'], function(settingsResult) {
+      const settings = settingsResult.settings || {};
+      const format = settings.exportFormat || 'txt';
+      
+      let content = '';
+      const filename = `highlights-${new Date().toISOString().split('T')[0]}.${format}`;
+      
+      switch (format) {
+        case 'txt':
+          // Plain text format
+          flashcards.forEach(card => {
+            content += `${card.title || 'Untitled'}\n`;
+            content += `${card.content}\n\n`;
+            if (card.source) {
+              content += `Source: ${card.source}\n`;
+            }
+            if (card.url) {
+              content += `URL: ${card.url}\n`;
+            }
+            content += `Date: ${new Date(card.timestamp).toLocaleString()}\n`;
+            content += '-'.repeat(40) + '\n\n';
+          });
+          break;
+          
+        case 'csv':
+          // CSV format
+          content = 'Title,Content,Source,URL,Date\n';
+          flashcards.forEach(card => {
+            content += `"${(card.title || 'Untitled').replace(/"/g, '""')}",`;
+            content += `"${card.content.replace(/"/g, '""')}",`;
+            content += `"${(card.source || '').replace(/"/g, '""')}",`;
+            content += `"${(card.url || '').replace(/"/g, '""')}",`;
+            content += `"${new Date(card.timestamp).toLocaleString()}"\n`;
+          });
+          break;
+          
+        case 'json':
+          // JSON format
+          content = JSON.stringify(flashcards, null, 2);
+          break;
+      }
+      
+      // Create download link
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      
+      // Clean up
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    });
   });
 }
 
 // Clear all flashcards
 function clearFlashcards() {
-  if (confirm('Are you sure you want to delete all flashcards?')) {
+  if (confirm('Are you sure you want to clear all flashcards? This cannot be undone.')) {
     chrome.storage.local.set({ flashcards: [] }, function() {
-      // Update the display
-      displayFlashcards([]);
+      console.log('All flashcards cleared');
+      
+      // Refresh the display
+      loadFlashcards();
     });
   }
+}
+
+// Function to open the notes page
+function openNotesPage() {
+  chrome.tabs.create({ url: 'notes.html' });
+}
+
+// Enhance PDF support
+function enhancePdfSupport(tabId) {
+  chrome.scripting.executeScript({
+    target: { tabId: tabId },
+    function: () => {
+      // This script runs in the context of a PDF document
+      
+      // Check if this is a PDF viewer
+      const isPdfViewer = document.querySelector('embed[type="application/pdf"]') || 
+                          document.querySelector('object[type="application/pdf"]') ||
+                          document.querySelector('.pdfViewer');
+      
+      if (!isPdfViewer) return;
+      
+      console.log("Enhancing PDF support for highlight extraction");
+      
+      // Improved text selection in the PDF viewer
+      const enhancePdfSelection = () => {
+        // Listen for text selection events
+        document.addEventListener('mouseup', () => {
+          const selection = window.getSelection();
+          const selectedText = selection.toString().trim();
+          
+          if (selectedText.length > 0) {
+            // Notify the content script about the selection
+            chrome.runtime.sendMessage({
+              action: "pdfSelection",
+              text: selectedText,
+              url: window.location.href,
+              title: document.title || window.location.pathname.split('/').pop()
+            });
+          }
+        });
+      };
+      
+      // Start enhancing the PDF experience
+      enhancePdfSelection();
+    }
+  });
 }
 
 // Load settings
@@ -357,17 +491,25 @@ function loadSettings() {
   chrome.storage.sync.get(['settings'], function(result) {
     const settings = result.settings || {};
     
-    // Update settings fields
-    document.getElementById('auto-title').checked = settings.autoTitle !== false; // Default to true
-    document.getElementById('auto-question').checked = settings.autoQuestion === true; // Default to false
-    
-    // Update color picker if exists
+    // Set highlight color
     const colorPicker = document.getElementById('highlight-color');
-    if (colorPicker && settings.highlightColor) {
-      colorPicker.value = settings.highlightColor;
+    if (colorPicker) {
+      colorPicker.value = settings.highlightColor || '#ffeb3b';
     }
     
-    // Apply dark mode if set
+    // Set export format
+    const formatSelect = document.getElementById('export-format');
+    if (formatSelect && settings.exportFormat) {
+      formatSelect.value = settings.exportFormat;
+    }
+    
+    // Set PDF support
+    const pdfCheckbox = document.getElementById('improve-pdf');
+    if (pdfCheckbox) {
+      pdfCheckbox.checked = settings.improvePdf !== false; // Default to true
+    }
+    
+    // Apply dark mode if needed
     if (settings.darkMode) {
       document.body.classList.add('dark-theme');
     }
@@ -376,25 +518,41 @@ function loadSettings() {
 
 // Save settings
 function saveSettings() {
-  const settings = {
-    autoTitle: document.getElementById('auto-title').checked,
-    autoQuestion: document.getElementById('auto-question').checked,
-    darkMode: document.body.classList.contains('dark-theme')
-  };
-  
-  // Get color picker value if exists
   const colorPicker = document.getElementById('highlight-color');
-  if (colorPicker) {
-    settings.highlightColor = colorPicker.value;
-  }
+  const formatSelect = document.getElementById('export-format');
+  const pdfCheckbox = document.getElementById('improve-pdf');
   
-  chrome.storage.sync.set({ settings: settings }, function() {
-    // Show confirmation
-    document.getElementById('extraction-status').textContent = "Settings saved!";
+  chrome.storage.sync.get(['settings'], function(result) {
+    // Get existing settings or create new object
+    const settings = result.settings || {};
     
-    // Clear the message after 3 seconds
-    setTimeout(() => {
-      document.getElementById('extraction-status').textContent = "";
-    }, 3000);
+    // Update settings
+    if (colorPicker) {
+      settings.highlightColor = colorPicker.value;
+    }
+    
+    if (formatSelect) {
+      settings.exportFormat = formatSelect.value;
+    }
+    
+    if (pdfCheckbox) {
+      settings.improvePdf = pdfCheckbox.checked;
+    }
+    
+    // Save dark mode state
+    settings.darkMode = document.body.classList.contains('dark-theme');
+    
+    // Save to storage
+    chrome.storage.sync.set({ settings: settings }, function() {
+      // Show saved message
+      const saveBtn = document.getElementById('saveSettings');
+      const originalText = saveBtn.textContent;
+      saveBtn.textContent = 'Saved!';
+      
+      // Revert button text after a delay
+      setTimeout(() => {
+        saveBtn.textContent = originalText;
+      }, 1500);
+    });
   });
 }

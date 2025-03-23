@@ -24,6 +24,11 @@ function initialize() {
 
 // Create a container to hold our highlights
 function createHighlightContainer() {
+  // Check if container already exists
+  if (document.getElementById('highlight-extractor-container')) {
+    return;
+  }
+  
   const container = document.createElement('div');
   container.id = 'highlight-extractor-container';
   container.style.position = 'absolute';
@@ -70,6 +75,7 @@ function handleTextSelection(event) {
   // If text is selected, show the highlight button
   if (selectedText.length > 0) {
     const container = document.getElementById('highlight-extractor-container');
+    if (!container) return;
     
     // Position the container near the selection
     const range = selection.getRangeAt(0);
@@ -82,7 +88,7 @@ function handleTextSelection(event) {
 }
 
 // Highlight the selected text
-function highlightSelectedText(color) {
+function highlightSelectedText(color, source) {
   const selection = window.getSelection();
   const selectedText = selection.toString().trim();
   
@@ -109,7 +115,8 @@ function highlightSelectedText(color) {
     context: getContextFromSelection(selection),
     timestamp: new Date().toISOString(),
     url: window.location.href,
-    title: document.title
+    title: document.title,
+    source: source || '' // Add source attribution
   };
   
   // Add to our custom highlights array
@@ -123,13 +130,20 @@ function highlightSelectedText(color) {
     range.surroundContents(highlightSpan);
     
     // Hide the highlight container
-    document.getElementById('highlight-extractor-container').style.display = 'none';
+    const container = document.getElementById('highlight-extractor-container');
+    if (container) {
+      container.style.display = 'none';
+    }
     
     // Clear the selection
     selection.removeAllRanges();
+    
+    console.log("Highlight applied successfully:", highlight);
+    return highlight;
   } catch (e) {
     console.error("Error highlighting text:", e);
     alert("Could not apply highlight. The selection might span across multiple elements.");
+    return null;
   }
 }
 
@@ -179,7 +193,13 @@ function saveHighlight(highlight) {
     // Update storage
     allHighlights[urlKey] = pageHighlights;
     chrome.storage.local.set({ highlights: allHighlights }, function() {
-      console.log('Highlight saved');
+      console.log('Highlight saved:', highlight);
+      
+      // Also notify the background script
+      chrome.runtime.sendMessage({
+        action: "saveHighlight",
+        highlight: highlight
+      });
     });
   });
 }
@@ -191,6 +211,8 @@ function loadSavedHighlights() {
   chrome.storage.local.get(['highlights'], function(result) {
     const allHighlights = result.highlights || {};
     const pageHighlights = allHighlights[urlKey] || [];
+    
+    console.log('Loaded highlights:', pageHighlights.length);
     
     // Update our custom highlights array
     customHighlights = pageHighlights;
@@ -207,6 +229,8 @@ function loadSavedHighlights() {
 
 // Apply saved highlights to the page
 function applyHighlightsToPage(highlights) {
+  console.log('Applying highlights to page:', highlights.length);
+  
   // Create a text node walker to find the text
   const walker = document.createTreeWalker(
     document.body,
@@ -236,11 +260,15 @@ function applyHighlightsToPage(highlights) {
         span.id = highlight.id;
         span.style.backgroundColor = highlight.color;
         span.dataset.timestamp = highlight.timestamp;
+        if (highlight.source) {
+          span.dataset.source = highlight.source;
+        }
         
         try {
           // Apply the highlight
           range.surroundContents(span);
           found = true;
+          console.log('Applied saved highlight:', highlight.text);
           break;
         } catch (e) {
           console.error("Error applying saved highlight:", e);
@@ -256,10 +284,21 @@ function applyHighlightsToPage(highlights) {
 
 // Handle messages from popup or background scripts
 function handleMessages(request, sender, sendResponse) {
-  console.log("Received message:", request);
+  console.log("Content script received message:", request);
   
   if (request.action === "extractHighlights") {
     // Return all custom highlights for this page
+    console.log("Extracting highlights, found:", customHighlights.length);
+    
+    // If a source is provided in the request, add it to highlights that don't have a source
+    if (request.source) {
+      customHighlights.forEach(highlight => {
+        if (!highlight.source) {
+          highlight.source = request.source;
+        }
+      });
+    }
+    
     sendResponse({ highlights: customHighlights });
     return true;
   }
@@ -272,15 +311,44 @@ function handleMessages(request, sender, sendResponse) {
   }
   
   if (request.action === "highlightSelection") {
-    // Highlight the current selection
-    highlightSelectedText(request.color || '#ffeb3b');
-    sendResponse({ success: true });
+    console.log("Highlighting current selection with color:", request.color);
+    // Highlight the current selection with source information
+    const highlight = highlightSelectedText(request.color || '#ffeb3b', request.source);
+    sendResponse({ success: !!highlight, highlight: highlight });
     return true;
   }
+  
+  if (request.action === "pdfSelection") {
+    // Handle PDF selection by creating a highlight object
+    const highlight = {
+      id: 'pdf-highlight-' + Date.now(),
+      text: request.text,
+      color: '#ffeb3b', // Default color for PDF highlights
+      context: '',
+      timestamp: new Date().toISOString(),
+      url: request.url || window.location.href,
+      title: request.title || document.title,
+      source: request.source || '',
+      isPdf: true
+    };
+    
+    // Add to our custom highlights array
+    customHighlights.push(highlight);
+    
+    // Save the highlight
+    saveHighlight(highlight);
+    
+    sendResponse({ success: true, highlight: highlight });
+    return true;
+  }
+  
+  return false; // No response
 }
 
 // Clear all highlights from the page
 function clearHighlights() {
+  console.log("Clearing all highlights");
+  
   // Remove highlight elements
   const highlights = document.querySelectorAll('.highlight-extractor-highlight');
   highlights.forEach(highlight => {
@@ -296,10 +364,8 @@ function clearHighlights() {
     let allHighlights = result.highlights || {};
     delete allHighlights[urlKey];
     chrome.storage.local.set({ highlights: allHighlights }, function() {
-      console.log('Highlights cleared');
+      console.log('Highlights cleared from storage');
+      customHighlights = [];
     });
   });
-  
-  // Clear our custom highlights array
-  customHighlights = [];
 }

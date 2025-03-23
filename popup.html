@@ -213,6 +213,27 @@
       background-color: var(--bg-color);
       color: var(--text-color);
     }
+    
+    /* Source field */
+    .source-field {
+      margin-top: 15px;
+    }
+    
+    .source-field input {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-size: 14px;
+    }
+    
+    .source-field label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+    }
   </style>
 </head>
 <body>
@@ -236,7 +257,17 @@
       <div class="highlight-controls">
         <button id="clearHighlightsBtn" class="action-btn secondary">Clear Highlights</button>
       </div>
+      
+      <div class="source-field">
+        <label for="source-input">Source (book/article title for attribution):</label>
+        <input type="text" id="source-input" placeholder="Enter source title">
+      </div>
+      
       <div id="extraction-status"></div>
+      
+      <div class="highlight-controls" style="margin-top: 20px;">
+        <button id="viewNotesBtn" class="action-btn">See All Notes</button>
+      </div>
     </div>
     
     <div id="flashcards" class="tab-content">
@@ -269,12 +300,25 @@
       </div>
       
       <div class="setting-group">
-        <h3>Export Format</h3>
-        <select id="export-format">
-          <option value="txt">Plain Text (.txt)</option>
-          <option value="csv">CSV (.csv)</option>
-          <option value="json">JSON (.json)</option>
-        </select>
+        <h3>Export Settings</h3>
+        <div>
+          <label for="export-format">Export Format:</label>
+          <select id="export-format">
+            <option value="txt">Text (.txt)</option>
+            <option value="csv">CSV (.csv)</option>
+            <option value="json">JSON (.json)</option>
+          </select>
+        </div>
+      </div>
+      
+      <div class="setting-group">
+        <h3>PDF Settings</h3>
+        <div>
+          <label>
+            <input type="checkbox" id="improve-pdf" checked>
+            Enhanced PDF Support (better text selection in PDFs)
+          </label>
+        </div>
       </div>
       
       <button id="saveSettings" class="action-btn">Save Settings</button>
