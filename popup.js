@@ -66,7 +66,60 @@ document.addEventListener('DOMContentLoaded', function() {
       statusElement.innerHTML = '<strong>PDF Detected:</strong> Select text and click Highlight!';
       
       // Check if enhanced PDF support is enabled
-      chrome.storage.sync.get(['settings'], function(result) {
+      chrome.storage.sync.get(['settings'], function(settingsResult) {
+      const settings = settingsResult.settings || {};
+      const format = settings.exportFormat || 'txt';
+      
+      let content = '';
+      const filename = `highlights-${new Date().toISOString().split('T')[0]}.${format}`;
+      
+      switch (format) {
+        case 'txt':
+          // Plain text format
+          flashcards.forEach(card => {
+            content += `${card.title || 'Untitled'}\n`;
+            content += `${card.content}\n\n`;
+            if (card.source) {
+              content += `Source: ${card.source}\n`;
+            }
+            if (card.url) {
+              content += `URL: ${card.url}\n`;
+            }
+            content += `Date: ${new Date(card.timestamp).toLocaleString()}\n`;
+            content += '-'.repeat(40) + '\n\n';
+          });
+          break;
+          
+        case 'csv':
+          // CSV format
+          content = 'Title,Content,Source,URL,Date\n';
+          flashcards.forEach(card => {
+            content += `"${(card.title || 'Untitled').replace(/"/g, '""')}",`;
+            content += `"${card.content.replace(/"/g, '""')}",`;
+            content += `"${(card.source || '').replace(/"/g, '""')}",`;
+            content += `"${(card.url || '').replace(/"/g, '""')}",`;
+            content += `"${new Date(card.timestamp).toLocaleString()}"\n`;
+          });
+          break;
+          
+        case 'json':
+          // JSON format
+          content = JSON.stringify(flashcards, null, 2);
+          break;
+      }
+      
+      // Create download link
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      
+      // Clean up
+      setTimeout(() => URL.revokeObjectURL(url), 100);
+    });(['settings'], function(result) {
         const settings = result.settings || {};
         if (settings.improvePdf) {
           // Inject PDF enhancement script
@@ -550,13 +603,6 @@ function loadSettings() {
       pdfCheckbox.checked = settings.improvePdf !== false; // Default to true
     }
     
-    // Set persistent highlights
-    const persistentHighlights = document.getElementById('persistent-highlights');
-    if (persistentHighlights) {
-      // Default to true
-      persistentHighlights.checked = settings.persistentHighlights !== false;
-    }
-    
     // Apply dark mode if needed
     if (settings.darkMode) {
       document.body.classList.add('dark-theme');
@@ -569,7 +615,6 @@ function saveSettings() {
   const colorPicker = document.getElementById('highlight-color');
   const formatSelect = document.getElementById('export-format');
   const pdfCheckbox = document.getElementById('improve-pdf');
-  const persistentHighlights = document.getElementById('persistent-highlights');
   
   chrome.storage.sync.get(['settings'], function(result) {
     // Get existing settings or create new object
@@ -586,20 +631,6 @@ function saveSettings() {
     
     if (pdfCheckbox) {
       settings.improvePdf = pdfCheckbox.checked;
-    }
-    
-    if (persistentHighlights) {
-      settings.persistentHighlights = persistentHighlights.checked;
-      
-      // Send message to active tab about the persistent highlights setting
-      chrome.tabs.query({active: true, currentWindow: true}, function(tabs) {
-        if (tabs[0]) {
-          chrome.tabs.sendMessage(tabs[0].id, {
-            action: "updatePersistentHighlights",
-            persistent: persistentHighlights.checked
-          });
-        }
-      });
     }
     
     // Save dark mode state
