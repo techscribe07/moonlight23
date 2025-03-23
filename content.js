@@ -3,26 +3,11 @@
 // Track our custom highlights in an array
 let customHighlights = [];
 
-// Track if highlights should be persistent (saved between page refreshes)
-let persistentHighlights = true; // Default to true
-
 // Initialize the extension
 initialize();
 
 function initialize() {
   console.log("Highlight Extractor: Content script loaded");
-  
-  // Check if highlights should be persistent
-  chrome.storage.sync.get(['settings'], function(result) {
-    const settings = result.settings || {};
-    persistentHighlights = settings.persistentHighlights !== false; // Default to true
-    console.log("Highlight persistence:", persistentHighlights ? "enabled" : "disabled");
-    
-    // Only load saved highlights if persistence is enabled
-    if (persistentHighlights) {
-      loadSavedHighlights();
-    }
-  });
   
   // Set up the highlight action on mouseup (when user finishes selecting text)
   document.addEventListener('mouseup', handleTextSelection);
@@ -134,9 +119,6 @@ function highlightSelectedText(color, source) {
   // Add to our custom highlights array
   customHighlights.push(highlight);
   
-  // Save the highlight
-  saveHighlight(highlight);
-  
   // Apply the highlight to the DOM
   try {
     range.surroundContents(highlightSpan);
@@ -189,124 +171,6 @@ function getContextFromSelection(selection) {
   return element.textContent.trim();
 }
 
-// Save a highlight to storage
-function saveHighlight(highlight) {
-  // Only save if persistent highlights are enabled
-  if (!persistentHighlights) {
-    // If not persistent, just add to in-memory array
-    customHighlights.push(highlight);
-    console.log("Added highlight to memory (non-persistent mode)");
-    return;
-  }
-  
-  const urlKey = encodeURIComponent(window.location.href);
-  
-  console.log("Saving highlight for URL:", urlKey);
-  
-  chrome.storage.local.get(['highlights'], function(result) {
-    const allHighlights = result.highlights || {};
-    const pageHighlights = allHighlights[urlKey] || [];
-    
-    // Check if this is a duplicate highlight (based on text)
-    const isDuplicate = pageHighlights.some(existing => existing.text === highlight.text);
-    
-    if (isDuplicate) {
-      console.log("Duplicate highlight detected, not saving:", highlight.text);
-      return;
-    }
-    
-    // Add the new highlight
-    pageHighlights.push(highlight);
-    allHighlights[urlKey] = pageHighlights;
-    
-    // Update our local copy
-    customHighlights = pageHighlights;
-    
-    // Save to storage
-    chrome.storage.local.set({ highlights: allHighlights }, function() {
-      console.log("Highlight saved successfully");
-    });
-  });
-}
-
-// Load saved highlights for the current page
-function loadSavedHighlights() {
-  const urlKey = encodeURIComponent(window.location.href);
-  
-  chrome.storage.local.get(['highlights'], function(result) {
-    const allHighlights = result.highlights || {};
-    const pageHighlights = allHighlights[urlKey] || [];
-    
-    console.log('Loaded highlights:', pageHighlights.length);
-    
-    // Update our custom highlights array
-    customHighlights = pageHighlights;
-    
-    // Apply the highlights to the page
-    if (pageHighlights.length > 0) {
-      // Wait a bit for the page to fully load
-      setTimeout(() => {
-        applyHighlightsToPage(pageHighlights);
-      }, 500);
-    }
-  });
-}
-
-// Apply saved highlights to the page
-function applyHighlightsToPage(highlights) {
-  console.log('Applying highlights to page:', highlights.length);
-  
-  // Create a text node walker to find the text
-  const walker = document.createTreeWalker(
-    document.body,
-    NodeFilter.SHOW_TEXT,
-    null,
-    false
-  );
-  
-  highlights.forEach(highlight => {
-    let node;
-    let found = false;
-    
-    // Walk through all text nodes
-    while (node = walker.nextNode()) {
-      const text = node.textContent;
-      const index = text.indexOf(highlight.text);
-      
-      if (index >= 0) {
-        // Found the text, create a range
-        const range = document.createRange();
-        range.setStart(node, index);
-        range.setEnd(node, index + highlight.text.length);
-        
-        // Create highlight span
-        const span = document.createElement('span');
-        span.className = 'highlight-extractor-highlight';
-        span.id = highlight.id;
-        span.style.backgroundColor = highlight.color;
-        span.dataset.timestamp = highlight.timestamp;
-        if (highlight.source) {
-          span.dataset.source = highlight.source;
-        }
-        
-        try {
-          // Apply the highlight
-          range.surroundContents(span);
-          found = true;
-          console.log('Applied saved highlight:', highlight.text);
-          break;
-        } catch (e) {
-          console.error("Error applying saved highlight:", e);
-        }
-      }
-    }
-    
-    if (!found) {
-      console.log("Could not find text to highlight:", highlight.text);
-    }
-  });
-}
-
 // Handle messages from popup or background scripts
 function handleMessages(request, sender, sendResponse) {
   console.log("Content script received message:", request);
@@ -324,8 +188,7 @@ function handleMessages(request, sender, sendResponse) {
       });
     }
     
-    // Send all highlights, not just new ones
-    // The duplicate checking will happen in the popup.js
+    // Send all highlights
     sendResponse({ highlights: customHighlights });
     return true;
   }
@@ -340,27 +203,6 @@ function handleMessages(request, sender, sendResponse) {
   if (request.action === "clearHighlights") {
     // Clear all highlights from the page
     clearHighlights();
-    sendResponse({ success: true });
-    return true;
-  }
-  
-  if (request.action === "updatePersistentHighlights") {
-    // Update the persistent highlights setting
-    persistentHighlights = request.persistent;
-    console.log("Persistent highlights set to:", persistentHighlights);
-    
-    // If turning persistence on, save current in-memory highlights
-    if (persistentHighlights && customHighlights.length > 0) {
-      const urlKey = encodeURIComponent(window.location.href);
-      chrome.storage.local.get(['highlights'], function(result) {
-        const allHighlights = result.highlights || {};
-        allHighlights[urlKey] = customHighlights;
-        chrome.storage.local.set({ highlights: allHighlights }, function() {
-          console.log("In-memory highlights saved to storage");
-        });
-      });
-    }
-    
     sendResponse({ success: true });
     return true;
   }
@@ -382,9 +224,6 @@ function handleMessages(request, sender, sendResponse) {
     // Add to our custom highlights array
     customHighlights.push(highlight);
     
-    // Save the highlight
-    saveHighlight(highlight);
-    
     sendResponse({ success: true, highlight: highlight });
     return true;
   }
@@ -405,14 +244,6 @@ function clearHighlights() {
     highlight.parentNode.replaceChild(textNode, highlight);
   });
   
-  // Clear storage for this page
-  const urlKey = encodeURIComponent(window.location.href);
-  chrome.storage.local.get(['highlights'], function(result) {
-    let allHighlights = result.highlights || {};
-    delete allHighlights[urlKey];
-    chrome.storage.local.set({ highlights: allHighlights }, function() {
-      console.log('Highlights cleared from storage');
-      customHighlights = [];
-    });
-  });
+  // Clear in-memory highlights
+  customHighlights = [];
 }
