@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Highlight Notes</title>
+  <meta charset="utf-8">
+  <style>
+    :root {
+      --bg-color: #ffffff;
+      --text-color: #333333;
+      --border-color: #dddddd;
+      --highlight-color: #4285f4;
+      --secondary-bg: #f5f5f5;
+      --card-bg: #ffffff;
+      --danger-color: #d32f2f;
+    }
+    
+    /* Dark mode theme */
+    .dark-theme {
+      --bg-color: #1e1e1e;
+      --text-color: #e0e0e0;
+      --border-color: #444444;
+      --highlight-color: #4285f4;
+      --secondary-bg: #2d2d2d;
+      --card-bg: #2d2d2d;
+      --danger-color: #f44336;
+    }
+    
+    /* Basic styling */
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      transition: background-color 0.3s, color 0.3s;
+    }
+    
+    .container {
+      display: flex;
+      flex-direction: column;
+    }
+    
+    h1 {
+      font-size: 24px;
+      margin-top: 0;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .note-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 15px;
+      margin-bottom: 20px;
+      position: relative;
+    }
+    
+    .note-title {
+      font-weight: bold;
+      margin-top: 0;
+      margin-bottom: 10px;
+      font-size: 18px;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 8px;
+    }
+    
+    .note-title[contenteditable="true"]:focus {
+      outline: none;
+      border-bottom: 1px solid var(--highlight-color);
+    }
+    
+    .note-content {
+      margin: 0;
+      line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    
+    .note-content[contenteditable="true"]:focus {
+      outline: none;
+    }
+    
+    .note-source {
+      font-size: 12px;
+      color: #777;
+      font-style: italic;
+      margin-top: 15px;
+      padding-top: 10px;
+      border-top: 1px dashed var(--border-color);
+    }
+    
+    .note-timestamp {
+      font-size: 12px;
+      color: #777;
+      margin-top: 10px;
+    }
+    
+    .note-buttons {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 5px;
+    }
+    
+    .note-button {
+      background: none;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+    
+    .note-button:hover {
+      opacity: 1;
+    }
+    
+    .delete-button {
+      color: var(--danger-color);
+    }
+    
+    .edit-button {
+      color: var(--highlight-color);
+    }
+    
+    .save-button {
+      color: green;
+    }
+    
+    .controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      justify-content: flex-end;
+    }
+    
+    .action-btn {
+      background: var(--highlight-color);
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    .action-btn.secondary {
+      background: var(--secondary-bg);
+      color: var(--text-color);
+      border: 1px solid var(--border-color);
+    }
+    
+    .no-notes {
+      color: #777;
+      font-style: italic;
+      text-align: center;
+      margin-top: 50px;
+    }
+    
+    /* Theme toggle */
+    .theme-toggle {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text-color);
+      font-size: 20px;
+      padding: 0;
+    }
+    
+    /* Print styling */
+    @media print {
+      .controls, .note-buttons, .theme-toggle {
+        display: none !important;
+      }
+      
+      body {
+        background-color: white;
+        color: black;
+      }
+      
+      .note-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        background: white;
+        border: 1px solid #eee;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>
+      My Highlight Notes 
+      <button id="themeToggle" class="theme-toggle">🌓</button>
+    </h1>
+    
+    <div class="controls">
+      <button id="exportPdf" class="action-btn">Export to PDF</button>
+      <button id="exportBtn" class="action-btn">Export Notes</button>
+      <button id="clearBtn" class="action-btn secondary">Clear All</button>
+    </div>
+    
+    <div id="notes-container">
+      <!-- Notes will be dynamically added here -->
+      <div class="no-notes">No notes found. Add highlights from web pages to see them here.</div>
+    </div>
+  </div>
+  
+  <script src="notes.js"></script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Highlight Extractor",
-  "version": "1.2.0",
-  "description": "Extract highlighted text from web pages and PDFs",
+  "version": "1.0",
+  "description": "Extract and save highlighted text from web pages",
   "permissions": [
     "activeTab",
     "scripting",
