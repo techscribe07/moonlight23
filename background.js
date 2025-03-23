@@ -54,13 +54,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     }
   }
   
-  // For direct saving of highlights from content script
-  if (request.action === "saveHighlight") {
-    saveHighlightToStorage(request.highlight, sender.tab?.url);
-    sendResponse({success: true});
-    return true;
-  }
-  
   // Handle saveHighlights action
   if (request.action === "saveHighlights") {
     saveHighlightsToStorage(request.highlights);
@@ -82,9 +75,6 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
       source: request.source || '',
       isPdf: true
     };
-    
-    // Save the highlight
-    saveHighlightToStorage(highlight, highlight.url);
     
     // Also add it as a flashcard
     addFlashcardFromHighlight(highlight);
@@ -160,27 +150,6 @@ function saveHighlightsToStorage(highlights) {
   });
 }
 
-// Save a single highlight to storage
-function saveHighlightToStorage(highlight, url) {
-  if (!url) return;
-  
-  const urlKey = encodeURIComponent(url);
-  
-  chrome.storage.local.get(['highlights'], function(result) {
-    let allHighlights = result.highlights || {};
-    let pageHighlights = allHighlights[urlKey] || [];
-    
-    // Add the new highlight
-    pageHighlights.push(highlight);
-    
-    // Update storage
-    allHighlights[urlKey] = pageHighlights;
-    chrome.storage.local.set({ highlights: allHighlights }, function() {
-      console.log('Highlight saved for: ' + url);
-    });
-  });
-}
-
 // Add a flashcard from a highlight
 function addFlashcardFromHighlight(highlight) {
   chrome.storage.local.get(['flashcards'], function(result) {
@@ -237,54 +206,4 @@ function addFlashcardFromHighlight(highlight) {
       });
     });
   });
-}
-
-// Process highlights into flashcards
-function processHighlightsToFlashcards(highlights, settings) {
-  let processedHighlights = [];
-  
-  // Get existing flashcards first to check for duplicates
-  chrome.storage.local.get(['flashcards'], function(result) {
-    const existingFlashcards = result.flashcards || [];
-    
-    highlights.forEach(highlight => {
-      // Check for duplicates
-      const isDuplicate = existingFlashcards.some(card => 
-        card.originalText === highlight.text
-      );
-      
-      if (isDuplicate) {
-        console.log('Duplicate highlight detected in processing, skipping:', highlight.text);
-        return;
-      }
-      
-      let title = '';
-      if (settings.autoTitle) {
-        // Use first 5 words as title
-        const words = highlight.text.split(' ');
-        title = words.slice(0, 5).join(' ');
-        if (words.length > 5) title += '...';
-      }
-      
-      let content = highlight.text;
-      if (settings.autoQuestion) {
-        // Format as a question
-        content = `What does this mean: "${highlight.text}"?`;
-      }
-      
-      processedHighlights.push({
-        title: title,
-        content: content,
-        originalText: highlight.text,
-        context: highlight.context || '',
-        timestamp: highlight.timestamp || new Date().toISOString(),
-        color: highlight.color,
-        url: highlight.url || '',
-        pageTitle: highlight.title || '',
-        source: highlight.source || highlight.url || ''
-      });
-    });
-  });
-  
-  return processedHighlights;
 }
