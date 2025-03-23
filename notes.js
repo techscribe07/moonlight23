@@ -43,9 +43,41 @@ document.addEventListener('DOMContentLoaded', function() {
 // Load and display saved notes
 function loadNotes() {
   chrome.storage.local.get(['flashcards'], function(result) {
-    const flashcards = result.flashcards || [];
-    displayNotes(flashcards);
+    let flashcards = result.flashcards || [];
+    
+    // Check for and remove duplicates before displaying
+    const cleanedFlashcards = removeDuplicateNotes(flashcards);
+    
+    // If we removed duplicates, save the cleaned list back
+    if (cleanedFlashcards.length !== flashcards.length) {
+      console.log(`Removed ${flashcards.length - cleanedFlashcards.length} duplicate notes`);
+      chrome.storage.local.set({ flashcards: cleanedFlashcards }, function() {
+        displayNotes(cleanedFlashcards);
+      });
+    } else {
+      displayNotes(cleanedFlashcards);
+    }
   });
+}
+
+// Remove duplicate notes based on content and URL
+function removeDuplicateNotes(notes) {
+  // Use a Map to track unique notes
+  // The key is a combination of content and URL
+  const uniqueMap = new Map();
+  
+  notes.forEach(note => {
+    // Create a unique key for each note based on text content and URL
+    const key = `${note.originalText || note.content}|${note.url || ''}`;
+    
+    // Only keep the most recent version of each note
+    if (!uniqueMap.has(key) || new Date(note.timestamp) > new Date(uniqueMap.get(key).timestamp)) {
+      uniqueMap.set(key, note);
+    }
+  });
+  
+  // Convert back to array and return
+  return Array.from(uniqueMap.values());
 }
 
 // Display notes in the page

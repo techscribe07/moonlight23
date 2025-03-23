@@ -103,13 +103,59 @@ function saveHighlightsToStorage(highlights) {
     chrome.storage.sync.get(['settings'], function(settingsResult) {
       const settings = settingsResult.settings || {};
       
-      const processedHighlights = processHighlightsToFlashcards(highlights, settings);
+      // We'll only process highlights that don't already exist in flashcards
+      const newHighlights = highlights.filter(highlight => {
+        return !flashcards.some(card => 
+          card.originalText === highlight.text && 
+          card.url === (highlight.url || '')
+        );
+      });
+      
+      if (newHighlights.length === 0) {
+        console.log('No new highlights to save to storage');
+        return;
+      }
+      
+      console.log(`Processing ${newHighlights.length} new highlights out of ${highlights.length} total`);
+      
+      const processedHighlights = [];
+      
+      // Process each highlight
+      newHighlights.forEach(highlight => {
+        let title = '';
+        if (settings.autoTitle) {
+          // Use first 5 words as title
+          const words = highlight.text.split(' ');
+          title = words.slice(0, 5).join(' ');
+          if (words.length > 5) title += '...';
+        }
+        
+        let content = highlight.text;
+        if (settings.autoQuestion) {
+          // Format as a question
+          content = `What does this mean: "${highlight.text}"?`;
+        }
+        
+        processedHighlights.push({
+          title: title,
+          content: content,
+          originalText: highlight.text,
+          context: highlight.context || '',
+          timestamp: highlight.timestamp || new Date().toISOString(),
+          color: highlight.color,
+          url: highlight.url || '',
+          pageTitle: highlight.title || '',
+          source: highlight.source || highlight.url || ''
+        });
+      });
       
       // Add the new flashcards
       flashcards.push(...processedHighlights);
       
       // Save updated flashcards
-      chrome.storage.local.set({ flashcards: flashcards });
+      chrome.storage.local.set({ flashcards: flashcards }, function() {
+        console.log(`Saved ${processedHighlights.length} new flashcards`);
+      });
     });
   });
 }
@@ -139,6 +185,17 @@ function saveHighlightToStorage(highlight, url) {
 function addFlashcardFromHighlight(highlight) {
   chrome.storage.local.get(['flashcards'], function(result) {
     let flashcards = result.flashcards || [];
+    
+    // Check for duplicates before adding
+    const isDuplicate = flashcards.some(card => 
+      card.originalText === highlight.text && 
+      card.url === highlight.url
+    );
+    
+    if (isDuplicate) {
+      console.log('Duplicate flashcard detected in background script, not adding:', highlight.text);
+      return;
+    }
     
     // Get settings for processing
     chrome.storage.sync.get(['settings'], function(settingsResult) {
@@ -185,31 +242,51 @@ function addFlashcardFromHighlight(highlight) {
 
 // Process highlights into flashcards
 function processHighlightsToFlashcards(highlights, settings) {
-  return highlights.map(highlight => {
-    let title = '';
-    if (settings.autoTitle) {
-      // Use first 5 words as title
-      const words = highlight.text.split(' ');
-      title = words.slice(0, 5).join(' ');
-      if (words.length > 5) title += '...';
-    }
+  let processedHighlights = [];
+  
+  // Get existing flashcards first to check for duplicates
+  chrome.storage.local.get(['flashcards'], function(result) {
+    const existingFlashcards = result.flashcards || [];
     
-    let content = highlight.text;
-    if (settings.autoQuestion) {
-      // Format as a question
-      content = `What does this mean: "${highlight.text}"?`;
-    }
-    
-    return {
-      title: title,
-      content: content,
-      originalText: highlight.text,
-      context: highlight.context || '',
-      timestamp: highlight.timestamp || new Date().toISOString(),
-      color: highlight.color,
-      url: highlight.url || '',
-      pageTitle: highlight.title || '',
-      source: highlight.source || highlight.url || ''
-    };
+    highlights.forEach(highlight => {
+      // Check for duplicates
+      const isDuplicate = existingFlashcards.some(card => 
+        card.originalText === highlight.text && 
+        card.url === (highlight.url || '')
+      );
+      
+      if (isDuplicate) {
+        console.log('Duplicate highlight detected in processing, skipping:', highlight.text);
+        return;
+      }
+      
+      let title = '';
+      if (settings.autoTitle) {
+        // Use first 5 words as title
+        const words = highlight.text.split(' ');
+        title = words.slice(0, 5).join(' ');
+        if (words.length > 5) title += '...';
+      }
+      
+      let content = highlight.text;
+      if (settings.autoQuestion) {
+        // Format as a question
+        content = `What does this mean: "${highlight.text}"?`;
+      }
+      
+      processedHighlights.push({
+        title: title,
+        content: content,
+        originalText: highlight.text,
+        context: highlight.context || '',
+        timestamp: highlight.timestamp || new Date().toISOString(),
+        color: highlight.color,
+        url: highlight.url || '',
+        pageTitle: highlight.title || '',
+        source: highlight.source || highlight.url || ''
+      });
+    });
   });
+  
+  return processedHighlights;
 }

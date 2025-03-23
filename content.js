@@ -187,6 +187,21 @@ function saveHighlight(highlight) {
     let allHighlights = result.highlights || {};
     let pageHighlights = allHighlights[urlKey] || [];
     
+    // Check for duplicates before adding
+    const isDuplicate = pageHighlights.some(existingHighlight => 
+      existingHighlight.text === highlight.text
+    );
+    
+    if (isDuplicate) {
+      console.log('Duplicate highlight detected, not saving:', highlight.text);
+      // Hide the highlight container
+      const container = document.getElementById('highlight-extractor-container');
+      if (container) {
+        container.style.display = 'none';
+      }
+      return;
+    }
+    
     // Add the new highlight
     pageHighlights.push(highlight);
     
@@ -299,7 +314,22 @@ function handleMessages(request, sender, sendResponse) {
       });
     }
     
-    sendResponse({ highlights: customHighlights });
+    // Create a list of highlights that haven't been extracted yet 
+    // by checking if they have the 'extracted' property
+    const newHighlights = customHighlights.filter(highlight => !highlight.extracted);
+    
+    // Mark all highlights as extracted
+    customHighlights = customHighlights.map(highlight => {
+      return { ...highlight, extracted: true };
+    });
+    
+    // Update the highlights in the DOM to reflect they've been extracted
+    document.querySelectorAll('.highlight-extractor-highlight').forEach(el => {
+      el.dataset.extracted = 'true';
+    });
+    
+    // Only return the new highlights
+    sendResponse({ highlights: newHighlights });
     return true;
   }
   

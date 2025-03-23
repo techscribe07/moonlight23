@@ -204,6 +204,9 @@ function saveHighlights(highlights) {
     const sourceInput = document.getElementById('source-input');
     const sourceValue = sourceInput ? sourceInput.value.trim() : '';
     
+    // Array to track new flashcards added
+    const newFlashcards = [];
+    
     // Process new highlights
     highlights.forEach(highlight => {
       // Skip system messages
@@ -232,7 +235,19 @@ function saveHighlights(highlights) {
       // Use highlight source if available, otherwise use the source input field
       const source = highlight.source || sourceValue;
       
-      flashcards.push({
+      // Check for duplicates before adding
+      const isDuplicate = flashcards.some(card => 
+        card.originalText === highlight.text && 
+        card.url === (highlight.url || window.location.href)
+      );
+      
+      if (isDuplicate) {
+        console.log('Duplicate flashcard detected, not adding:', highlight.text);
+        return;
+      }
+      
+      // Create the new flashcard
+      const newFlashcard = {
         title: title,
         content: content,
         originalText: highlight.text,
@@ -242,15 +257,28 @@ function saveHighlights(highlights) {
         pageTitle: highlight.title || document.title,
         timestamp: new Date().toISOString(),
         source: source
-      });
+      };
+      
+      // Add to flashcards array
+      flashcards.push(newFlashcard);
+      newFlashcards.push(newFlashcard);
     });
     
     // Save to storage
     chrome.storage.local.set({ flashcards: flashcards }, function() {
-      console.log('Flashcards saved:', flashcards.length);
+      console.log('Flashcards saved:', newFlashcards.length, 'new cards');
       
       // Update the display
       loadFlashcards();
+      
+      // Update extraction status to show count of new flashcards
+      if (newFlashcards.length > 0) {
+        document.getElementById('extraction-status').textContent = 
+          `Extracted ${newFlashcards.length} new highlight(s)!`;
+      } else {
+        document.getElementById('extraction-status').textContent = 
+          'No new highlights found.';
+      }
     });
   });
 }
